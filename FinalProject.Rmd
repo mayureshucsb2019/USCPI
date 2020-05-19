@@ -1,0 +1,536 @@
+---
+title: "PSTAT 274: Final Project (Study of CPI Time Series Data)"
+author: "Mayuresh Anand"
+date: "08/05/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## ABSTRACT
+
+In this report we are going to analyze and model time series data on consumer price index ( [\textcolor{blue}{CPILFESL}](https://fred.stlouisfed.org/series/CPILFESL)). We analyze the data by looking at its plot to predict its tred and seasonalit and look at ACF/PACF to find what model could be best suited. To reduce variability we use Box-Jenkins approach. To ascertain the validity of our results we perform following on residuals of the fitted model Portmanteau tests, QQPlot, Shapiro-Wilk test and analyze the ACF/PACF 
+
+We choose amongs the models using AICc and Law of Parsimony and find that the given dataset fits better on ARIMA(8,1,7).
+
+# INTRODUCTION
+
+We choose to study and model "Consumer Price Index for All Urban Consumers: All Items Less Food and Energy in U.S. City Average ( [CPILFESL](https://fred.stlouisfed.org/series/CPILFESL))" dataset to forecast CPI index values.
+
+This is a monthly dataset from from 1957 to current year i.e. 2020. But we choose to model the dataset from 1990-01-01 to 2010-12-01. This decision was made after we observed that dataset was not being able to be model accurately due to an outlier happening of 1980 great depression. But between these two time period the dataset is stable and hence the reason for this choice.
+
+The Consumer Price Index (CPI) is a monthly measurement of U.S. prices for most household goods and services. The Bureau of Labor Statistics surveys the prices of 80,000 consumer items to create the index. It represents the prices of a cross-section of goods and services commonly bought by primarily urban household (representative of 87% of the U.S. population).
+
+CPI is used to measure inflation or deflation in the economy. Inflation and deflation are a indicators of the performance of an economy and directly impacts standard of living of US population. For example, if inflation increases this means that the prices of goods are increasing and henceforth the affordability of products decreases unless the income of population also increases at a similar rate. It can be seen that if the inflation rate is high enough it can hurt economy. As products would cost more manufacturers produce less and this means that less manpower would be required. This would lead to condition that industry would have to lay off workers.
+
+Hence, if one is able to predict the trend of CPI index then goverment and fed would be in  a better position to make decisions governing the health of economy.
+
+We have used R (statistical analysis tool) and Mozilla Firefox (web browser) while working on this project.
+
+# ANALYSIS OF TIME SERIES
+
+```{r, echo=FALSE}
+#Readding the data from comma seperated value file CPILFESL.csv
+
+data_original <- read.table("CPILFESL.csv", header=TRUE, sep=",")
+data <- read.table("CPILFESL1.csv", header=TRUE, sep=",")
+
+#Load the dataset with the start date and frequency
+cpi_original = ts(data_original[,2], start=c(1957,1), end=c(2020,3),frequency = 12)
+cpi = ts(data[,2], start=c(1990,1), end=c(2010,12),frequency = 12)
+
+#Plot the time series data
+op = par(mfrow=c(1,2))
+ts.plot(cpi_original, main="CPILFESL- U.S. (1957 to 2020)", xlab="Time (monthly)", ylab="CPI prices")
+
+ts.plot(cpi, main="CPILFESL- U.S. (1990 to 2010)", xlab="Time (monthly)", ylab="CPI prices")
+par(op)
+```
+
+Above we plot the times series dataset for [CPILFESL](https://fred.stlouisfed.org/series/CPILFESL). We can see that there is a change in nature of data from 1970 to 1990. We use this dataset to work on values from 1990(January) to 2010(December, inclusive), of which we shall reserve next two years i.e. 2011(January) and 2012(December inclusive) for testing the forecasted data. 
+
+## OBSERVATIONS ON TIME SERIES
+
+1. **TREND**: We find that this time series has increasing trend, most probbably linear.
+
+2. **SEASONALITY**: There is no pattern of seasonality in the given time series
+
+3. **CHANGES**: Changes were obeserved in original series from (1970 to 1990) therefore we choose to work on period later to that. I also think that variability of the data is changing. Hence, to confirm if the variability is changing or not and to stabilize it I use Box-Cox transform.
+
+# TRANSFORMATION OF DATA
+
+```{r, echo=FALSE}
+library(MASS)
+t = 1:length(cpi)
+fit = lm(cpi ~ t)
+bcTransform = boxcox(cpi ~ t,plotit = TRUE)
+```
+
+As we can see here 0 is not included in the confidence interval therefore, I choose to tansform the data to lower its variability.
+
+```{r, echo=FALSE}
+lambda = bcTransform$x[which(bcTransform$y == max(bcTransform$y))]
+print("Box-Cox transform gives lambda as below:")
+print(lambda)
+cpi_BoxCoX = (1/lambda)*(cpi^lambda-1)
+
+hist(cpi_BoxCoX, main="Histogram of transformed data")
+```
+
+# MAKING TIME SERIES STATIONARY
+
+As it has no seasonality but trend, we are going to difference it two times successively at lag 1 and check the behavior of variance.
+
+```{r, echo=FALSE}
+options(warn=-1)
+print("Variance of the tansformed timeseries is:")
+print(var(cpi_BoxCoX))
+print("Variance of first difference of tansformed timeseries is:")
+cpi_BC_D1 = diff(cpi_BoxCoX, lag = 1)
+print(var(cpi_BC_D1))
+cpi_BC_2D1 = diff(cpi_BC_D1, lag = 1)
+print("Variance of second difference of tansformed timeseries is:")
+print(var(cpi_BC_2D1))
+```
+
+We see that after second differencing variance increases so we take data from only the first differencing. Now we analyze the behaviour of differenced data by plotting ACF/PACF and the plot of differenced data.
+
+```{r, echo=FALSE}
+# Plotting ACF and PACF values 
+op = par(mfrow=c(2,2))
+plot(cpi_BC_2D1, main="Differenced Time Series after BOX-COX")
+acf(cpi_BC_D1, lag.max = 40,main="ACF of CPI_BC_D1")
+pacf(cpi_BC_D1, lag.max = 40,main="PACF of CPI_BC_D1")
+par(op)
+```
+
+Looking at he ACF values outside CI are at lag 2,8 and PACF value outside CI are lag 8,12. Hence, we think this has $p = 8,12$ and $q = 5, 8$. Thus, this could be $ARIMA(8,1,5)$, $ARIMA(8,1,8)$, $ARIMA(12,1,5)$, $ARIMA(12,1,8)$.
+
+# FITTING THE SERIES PREDICTED AND DIAGNOSTIC CHECKING
+
+Below we are going to check the AICc value for each of the proposed models.
+
+```{r, echo=FALSE, message=FALSE}
+library(qpcR)
+print("AICC FOR ARIMA(8,1,5)")
+print(AICc(arima(cpi_BoxCoX, order=c(8,1,5), method="ML")))
+print("AICC FOR ARIMA(8,1,8)")
+print(AICc(arima(cpi_BoxCoX, order=c(8,1,8), method="ML")))
+print("AICC FOR ARIMA(12,1,5)")
+print(AICc(arima(cpi_BoxCoX, order=c(12,1,5), method="ML")))
+print("AICC FOR ARIMA(12,1,8)")
+print(AICc(arima(cpi_BoxCoX, order=c(12,1,8), method="ML")))
+```
+
+Looking at the AICc values we choose to go with ARIMA(8,1,5) as it has lowest AICc values. But then we find that this model doesn't produce causal and invertible model. Hence, we reject this and analyze ARIMA(8,1,8) model.
+
+**Note:** Before picking these models I was working with dataset values upto 2020. But the model fit were not doing good at some years so I choose to decrease the dataset values. Earier models that were being fit were ARIMA(6,1,10), ARIMA(12,1,10), ARIMA (6,1,8) and ARIMA(12,1,8). These models passed all the Portmanteau BOX tests, histogram, white-noise, qqnorm tests but **failed on Shapiro-Wilk test**. Hence, I thought that I can decrease the data points and then try again.zz
+
+## PICKING MODEL AND FIXING COEFFICIENTS 
+
+Below is the details of model parameter and AICc Score for ARIMA(8,1,8) model we chose.
+
+```{r, echo= FALSE}
+# We want to fix CPI of BOX COX 
+fit <- arima(cpi_BoxCoX, order=c(8,1,8), method="ML")
+rsdls = residuals(fit)
+fit
+print("Below is the AICc Score")
+AICc(fit)
+```
+
+We check for the confidence intervals and fix the coeffecients inside the C.I. to be 0. Following is the are parameters fixed = c(NA,NA,0,0,0,NA,NA,NA,  0,0,0,0,NA,NA,NA,0 ), method="ML").
+
+```{r, echo=FALSE, message=FALSE}
+# We want to fix CPI of BOX COX FOR ESIMATED PARAMETES
+fit <- arima(cpi_BoxCoX, order=c(8,1,8),
+      fixed = c(NA,NA,0,0,0,NA,NA,NA,  0,0,0,0,NA,NA,NA,0 ), method="ML")
+rsdls = residuals(fit)
+fit
+print("Below is the AICc value of the data:")
+AICc(fit)
+```
+
+We see that the AICc values decreases after making coefficients falling inside the confidence interval to be 0. 
+
+# CHECKING IF THE MODEL IS CAUSAL AND INVERTIBLE
+
+```{r, echo=FALSE, eval = FALSE}
+source("plot.roots.R")
+plot.roots(NULL,polyroot(c(1 , -0.1078 ,-0.1726  ,  0  ,  0  ,  0  , +0.1192 , -0.6452  , 0.1799)),main="Roots of AR part")
+plot.roots(NULL,polyroot(c(1, 0, 0, 0, 0, 0.1363, 0.2968, -0.4931, 0)),main="Roots of MA part")
+```
+
+```{r, echo=FALSE, message=FALSE}
+library(UnitCircle)
+uc.check(pol_ = c(1 , -0.1078 ,-0.1726  ,  0  ,  0  ,  0  , +0.1192 , -0.6452  , 0.1799), plot_output=TRUE)
+uc.check(pol_ = c(1, 0, 0, 0, 0, 0.1363, 0.2968, -0.4931, 0), plot_output= TRUE)
+```
+
+We see that the model we have chosen is **causal** and **invertible** as all the roots lies inside the unit circle for both MA and AR parts.
+
+# TRYING TO REDUCE PARAMETERS (Checking possible MA, AR and ARIMA models)
+
+We want to check if more coefficients can be removed, so we iterate over various permutations of choices for remaining 8 parameters and check if that produces lower AICc values.
+
+Below is the matrix of all possible 256 models and their AICc values:
+
+```{r, echo=FALSE}
+parameters <- 8
+w <- expand.grid(rep(list(0:1),parameters))
+for(i in 1:(2^parameters)){
+  for(j in 1:parameters){
+    if(w[i,j]==1){
+      w[i,j] = NA
+    }
+  }
+}
+
+calcAICc <- c(rep(Inf,2^parameters))
+
+for(i in 1:2^8){
+  x <- i
+  w[x,]
+  ar1 <- w[x,1]
+  ar2 <- w[x,2]
+  ar3 <- 0
+  ar4 <- 0
+  ar5 <- 0
+  ar6 <- w[x,3]
+  ar7 <- w[x,4]
+  ar8 <- w[x,5]
+  ma1 <- 0
+  ma2 <- 0
+  ma3 <- 0
+  ma4 <- 0
+  ma5 <- w[x,6]
+  ma6 <- w[x,7]
+  ma7 <- w[x,8]
+  ma8 <- 0
+  
+  try(
+    {
+      calcAICc[i]<- AICc(arima(cpi_BC_D1, order=c(8,1,8),
+      fixed = c(ar1,ar2,ar3,ar4,ar5,ar6,ar7,ar8, ma1,ma2,ma3,ma4,ma5,ma6,ma7,ma8), method="ML"))
+    }
+    , silent = TRUE
+   )
+}
+
+print(calcAICc)
+#minAICc <- which(calcAICc < 943.7431)
+#print(minAICc)
+#print("ar1 ar3 ar4  ar5 ar8  ma1  ma3  ma4  ma8")
+#for(i in 1:length(minAICc)){
+#  print(w[minAICc[i],])
+#  print(calcAICc[minAICc[i]])
+#}
+```
+
+We find that none of the model choices produce lower value of AICc than the one which we fixed using the confidence interval values. Hence, we move ahead with the model that we have and needs no updates.
+
+### ALGEBRAIC EQUATION OF THE MODEL
+
+```{r, echo=FALSE, message=FALSE, eval=FALSE}
+# We want to fix CPI of BOX COX FOR ESIMATED PARAMETES
+fit <- arima(cpi_BoxCoX, order=c(8,1,8),
+      fixed = c(NA,NA,0,0,0,NA,NA,NA,  0,0,0,0,NA,NA,NA,0 ), method="ML")
+rsdls = residuals(fit)
+fit
+print("Below is the AICc value of the data:")
+AICc(fit)
+```
+
+$X_t = 0.1078X_{t-1} + 0.1726X_{t-2} - 0.1192X_{t-6} + 0.6452X_{t-7} + 0.1799X_{t-8} + Z_t - 0.1363Z_{t-5} + 0.2968Z_{t-6} - 0.4931Z_{t-7}$
+
+So, we have ARIMA(8,1,7) model finally which is **causal** and **invertible**.
+
+### PLOT OF RESIDUALS AND DIAGNOSTICS
+
+Below is the plot for the residuals of the chosen model. We find that plot looks like that of white noise.
+
+```{r, echo=FALSE}
+plot(rsdls, main="Fitted Residuals")
+```
+
+```{r,echo=FALSE}
+op <- par(mfrow=c(2,2))
+acf(rsdls,main = "Autocorrelation")
+pacf(rsdls,main = "Partial Autocorrelation")
+hist(rsdls,main = "Histogram")
+qqnorm(rsdls,main = "QQPlot")
+qqline(rsdls,col="blue")
+par(op)
+```
+
+### SHAPIRO-WILK NORMALITY TEST
+
+```{r}
+shapiro.test(rsdls)
+```
+
+### BOX-LJUNG TEST
+
+```{r}
+Box.test(rsdls, type = "Ljung-Box", lag = 16, fitdf = 8)
+```
+
+### BOX-PIERCE TEST
+
+```{r}
+Box.test(rsdls, type = "Box-Pierce", lag = 16, fitdf = 8)
+```
+
+### McLeod-Li SQUARE TEST
+
+```{r}
+Box.test(rsdls^2, type = "Box-Pierce", lag = 16, fitdf = 0)
+```
+
+As for all the tests p-value is greater than 0.05 we cannot reject the hypothesis that this is a white noise and hence we are going to **ACCEPT** this model.
+
+So, we have fitted models ARIMA(8,1,7) which has lesser number of parameters and AICc value than that of ARIMA(8,1,8) choosen earlier.
+
+# SPECTRAL ANALYSIS 
+
+## PERIODOGRAM
+
+This is the periodogram on the residuals for the data.
+
+```{r, echo=FALSE, message=FALSE}
+library("TSA")
+periodogram(rsdls)
+```
+
+We find that there is no dominant frequencies among the plotted frequencies.
+
+Below is the periodogram for the orignal data
+
+```{r, echo=FALSE, message=FALSE}
+library("TSA")
+periodogram(cpi)
+```
+
+So we can see that original data has no period and this solifies our original observation.
+
+
+## FISHER's TEST
+
+```{r, echo=FALSE, message=FALSE}
+library("GeneCycle")
+fisher.g.test(rsdls)
+```
+
+## KOLMOGOROV-SIMRNOV TEST
+
+```{r, echo=FALSE}
+cpgram(rsdls,main="Kolmogorov-Simrnov Test")
+```
+
+In the above tests involving spectral analysis we see that p-value for Fisher's test is greater than 0.05 hence we cannot reject the hypothesis of this being white noise. Also, values for Kolmogorov-Smirnov test lies withing the confidence interval. 
+
+# FORECASTING
+
+```{r}
+forecast_series <-predict(fit, n.ahead = 24)
+values = (((forecast_series$pred)*lambda+1)^(1/lambda))
+errors = (((forecast_series$se)*lambda+1)^(1/lambda))
+#errors = forecast_series$se
+print(values)
+print(errors)
+cpi_2012 = ts(data[,2], start=c(1990,1), end=c(2012,12),frequency = 12)
+ts.plot(cpi_2012)
+lines(values,lty=1,col="red")
+lines(values+1.96*errors,lty=2)
+lines(values-1.96*errors,lty=2)
+```
+
+# APPENDIX [CODE SECTION]
+
+```{r, eval=FALSE}
+#Readding the data from comma seperated value file CPILFESL.csv
+
+data_original <- read.table("CPILFESL.csv", header=TRUE, sep=",")
+data <- read.table("CPILFESL1.csv", header=TRUE, sep=",")
+
+#Load the dataset with the start date and frequency
+cpi_original = ts(data_original[,2], start=c(1957,1), end=c(2020,3),
+                  frequency = 12)
+cpi = ts(data[,2], start=c(1990,1), end=c(2010,12),frequency = 12)
+
+#Plot the time series data
+op = par(mfrow=c(1,2))
+ts.plot(cpi_original, main="CPILFESL- U.S. (1957 to 2020)", 
+        xlab="Time (monthly)", ylab="CPI prices")
+
+ts.plot(cpi, main="CPILFESL- U.S. (1990 to 2010)", xlab="Time (monthly)", 
+        ylab="CPI prices")
+par(op)
+
+# BOX-COX Transformations
+lambda = bcTransform$x[which(bcTransform$y == max(bcTransform$y))]
+print("Box-Cox transform gives lambda as below:")
+print(lambda)
+cpi_BoxCoX = (1/lambda)*(cpi^lambda-1)
+
+#Checking Variances of the time series
+options(warn=-1)
+print("Variance of the tansformed timeseries is:")
+print(var(cpi_BoxCoX))
+print("Variance of first difference of tansformed timeseries is:")
+cpi_BC_D1 = diff(cpi_BoxCoX, lag = 1)
+print(var(cpi_BC_D1))
+cpi_BC_2D1 = diff(cpi_BC_D1, lag = 1)
+print("Variance of second difference of tansformed timeseries is:")
+print(var(cpi_BC_2D1))
+
+# BOX COX of differenced timeseries
+plot(cpi_BC_2D1, main="Differenced Time Series after BOX-COX")
+op = par(mfrow=c(1,2))
+acf(cpi_BC_D1, lag.max = 40,main="ACF of CPI_BC_D1")
+pacf(cpi_BC_D1, lag.max = 40,main="PACF of CPI_BC_D1")
+
+#Finding AICc values for the chosen model
+library(qpcR)
+print("AICC FOR ARIMA(8,1,5)")
+print(AICc(arima(cpi_BoxCoX, order=c(8,1,5), method="ML")))
+print("AICC FOR ARIMA(8,1,8)")
+print(AICc(arima(cpi_BoxCoX, order=c(8,1,8), method="ML")))
+print("AICC FOR ARIMA(12,1,5)")
+print(AICc(arima(cpi_BoxCoX, order=c(12,1,5), method="ML")))
+print("AICC FOR ARIMA(12,1,8)")
+print(AICc(arima(cpi_BoxCoX, order=c(12,1,8), method="ML")))
+
+# We want to fix CPI of BOX COX 
+fit <- arima(cpi_BoxCoX, order=c(8,1,8), method="ML")
+rsdls = residuals(fit)
+fit
+print("Below is the AICc Score")
+AICc(fit)
+
+# We want to fix CPI of BOX COX FOR ESIMATED PARAMETES
+fit <- arima(cpi_BoxCoX, order=c(8,1,8),
+      fixed = c(NA,NA,0,0,0,NA,NA,NA,  0,0,0,0,NA,NA,NA,0 ), method="ML")
+rsdls = residuals(fit)
+fit
+print("Below is the AICc value of the data:")
+AICc(fit)
+
+# Checking if the model roots lies in unit circle or not
+source("plot.roots.R")
+plot.roots(NULL,polyroot(c(1 , 0.1078 , 0.1726  ,  0  ,  0  ,  0  , -0.1192 , 0.6452  , 0.1799)), 
+           main="Roots of AR part")
+plot.roots(NULL,polyroot(c(1, 0, 0, 0, 0, 0.1363, 0.2968, -0.4931, 0)),
+           main="Roots of MA part")
+
+# Iterating over all the possible choices of the model parameters
+parameters <- 8
+w <- expand.grid(rep(list(0:1),parameters))
+for(i in 1:(2^parameters)){
+  for(j in 1:parameters){
+    if(w[i,j]==1){
+      w[i,j] = NA
+    }
+  }
+}
+
+calcAICc <- c(rep(Inf,2^parameters))
+
+for(i in 1:2^8){
+  x <- i
+  w[x,]
+  ar1 <- w[x,1]
+  ar2 <- w[x,2]
+  ar3 <- 0
+  ar4 <- 0
+  ar5 <- 0
+  ar6 <- w[x,3]
+  ar7 <- w[x,4]
+  ar8 <- w[x,5]
+  ma1 <- 0
+  ma2 <- 0
+  ma3 <- 0
+  ma4 <- 0
+  ma5 <- w[x,6]
+  ma6 <- w[x,7]
+  ma7 <- w[x,8]
+  ma8 <- 0
+  
+  try(
+    {
+      calcAICc[i]<- AICc(arima(cpi_BC_D1, order=c(8,1,8),
+      fixed = c(ar1,ar2,ar3,ar4,ar5,ar6,ar7,ar8, ma1,ma2,ma3,ma4,ma5,ma6,ma7,ma8), 
+      method="ML"))
+    }
+    , silent = TRUE
+   )
+}
+
+print(calcAICc)
+#minAICc <- which(calcAICc < 943.7431)
+#print(minAICc)
+#print("ar1 ar3 ar4  ar5 ar8  ma1  ma3  ma4  ma8")
+#for(i in 1:length(minAICc)){
+#  print(w[minAICc[i],])
+#  print(calcAICc[minAICc[i]])
+#}
+
+# We want to fix CPI of BOX COX FOR ESIMATED PARAMETES
+fit <- arima(cpi_BoxCoX, order=c(8,1,8),
+      fixed = c(NA,NA,0,0,0,NA,NA,NA,  0,0,0,0,NA,NA,NA,0 ), method="ML")
+rsdls = residuals(fit)
+fit
+print("Below is the AICc value of the data:")
+AICc(fit)
+
+# Plot of residual
+plot(rsdls, main="Fitted Residuals")
+
+# Plot of ACF, PACF, HISTOGRAM and QQPLOT
+op <- par(mfrow=c(2,2))
+acf(rsdls,main = "Autocorrelation")
+pacf(rsdls,main = "Partial Autocorrelation")
+hist(rsdls,main = "Histogram")
+qqnorm(rsdls,main = "QQPlot")
+qqline(rsdls,col="blue")
+par(op)
+
+# SHAPIRO WILK NORMALITY TEST
+shapiro.test(rsdls)
+
+# Ljung-Box test
+Box.test(rsdls, type = "Ljung-Box", lag = 16, fitdf = 8)
+
+# Box-Pierce test
+Box.test(rsdls, type = "Box-Pierce", lag = 16, fitdf = 8)
+
+# McLeod-Li test
+Box.test(rsdls^2, type = "Box-Pierce", lag = 16, fitdf = 0)
+
+# SPECTRAL ANALYSIS 
+
+# P
+
+# FISHER's TEST
+library("GeneCycle")
+fisher.g.test(rsdls)
+
+## KOLMOGOROV-SIMRNOV TEST
+cpgram(rsdls,main="Kolmogorov-Simrnov Test")
+
+# Forecasting ahead
+forecast_series <-predict(fit, n.ahead = 24)
+values = (((forecast_series$pred)*lambda+1)^(1/lambda))
+errors = (((forecast_series$se)*lambda+1)^(1/lambda))
+#errors = forecast_series$se
+print(values)
+print(errors)
+cpi_2012 = ts(data[,2], start=c(1990,1), end=c(2012,12),frequency = 12)
+ts.plot(cpi_2012)
+lines(values,lty=1,col="red")
+lines(values+1.96*errors,lty=2)
+lines(values-1.96*errors,lty=2)
+
+```

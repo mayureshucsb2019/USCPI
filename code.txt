@@ -1,0 +1,189 @@
+```{r, echo=FALSE}
+#Readding the data from comma seperated value file CPILFESL.csv
+
+data_original <- read.table("CPILFESL.csv", header=TRUE, sep=",")
+data <- read.table("CPILFESL1.csv", header=TRUE, sep=",")
+
+#Load the dataset with the start date and frequency
+cpi_original = ts(data_original[,2], start=c(1957,1), end=c(2020,3),frequency = 12)
+cpi = ts(data[,2], start=c(1990,1), end=c(2010,12),frequency = 12)
+
+#Plot the time series data
+op = par(mfrow=c(1,2))
+ts.plot(cpi_original, main="CPILFESL- U.S. (1957 to 2020)", xlab="Time (monthly)", ylab="CPI prices")
+
+ts.plot(cpi, main="CPILFESL- U.S. (1990 to 2010)", xlab="Time (monthly)", ylab="CPI prices")
+par(op)
+```
+
+```{r, echo=FALSE}
+lambda = bcTransform$x[which(bcTransform$y == max(bcTransform$y))]
+print("Box-Cox transform gives lambda as below:")
+print(lambda)
+cpi_BoxCoX = (1/lambda)*(cpi^lambda-1)
+```
+
+```{r, echo=FALSE}
+options(warn=-1)
+print("Variance of the tansformed timeseries is:")
+print(var(cpi_BoxCoX))
+print("Variance of first difference of tansformed timeseries is:")
+cpi_BC_D1 = diff(cpi_BoxCoX, lag = 1)
+print(var(cpi_BC_D1))
+cpi_BC_2D1 = diff(cpi_BC_D1, lag = 1)
+print("Variance of second difference of tansformed timeseries is:")
+print(var(cpi_BC_2D1))
+```
+
+```{r, echo=FALSE}
+plot(cpi_BC_2D1, main="Differenced Time Series after BOX-COX")
+op = par(mfrow=c(1,2))
+acf(cpi_BC_D1, lag.max = 40,main="ACF of CPI_BC_D1")
+pacf(cpi_BC_D1, lag.max = 40,main="PACF of CPI_BC_D1")
+par(op)
+```
+
+```{r, echo=FALSE, message=FALSE}
+library(qpcR)
+print("AICC FOR ARIMA(8,1,5)")
+print(AICc(arima(cpi_BoxCoX, order=c(8,1,5), method="ML")))
+print("AICC FOR ARIMA(8,1,8)")
+print(AICc(arima(cpi_BoxCoX, order=c(8,1,8), method="ML")))
+print("AICC FOR ARIMA(12,1,5)")
+print(AICc(arima(cpi_BoxCoX, order=c(12,1,5), method="ML")))
+print("AICC FOR ARIMA(12,1,8)")
+print(AICc(arima(cpi_BoxCoX, order=c(12,1,8), method="ML")))
+```
+
+```{r, echo= FALSE}
+# We want to fix CPI of BOX COX 
+fit <- arima(cpi_BoxCoX, order=c(8,1,8), method="ML")
+rsdls = residuals(fit)
+fit
+print("Below is the AICc Score")
+AICc(fit)
+```
+
+```{r, echo=FALSE, message=FALSE}
+# We want to fix CPI of BOX COX FOR ESIMATED PARAMETES
+fit <- arima(cpi_BoxCoX, order=c(8,1,8),
+      fixed = c(NA,NA,0,0,0,NA,NA,NA,  0,0,0,0,NA,NA,NA,0 ), method="ML")
+rsdls = residuals(fit)
+fit
+print("Below is the AICc value of the data:")
+AICc(fit)
+```
+
+```{r, echo=FALSE}
+source("plot.roots.R")
+plot.roots(NULL,polyroot(c(1 , 0.1078 , 0.1726  ,  0  ,  0  ,  0  , -0.1192 , 0.6452  , 0.1799)),main="Roots of AR part")
+plot.roots(NULL,polyroot(c(1, 0, 0, 0, 0, 0.1363, 0.2968, -0.4931, 0)),main="Roots of MA part")
+```
+
+```{r, echo=FALSE}
+parameters <- 8
+w <- expand.grid(rep(list(0:1),parameters))
+for(i in 1:(2^parameters)){
+  for(j in 1:parameters){
+    if(w[i,j]==1){
+      w[i,j] = NA
+    }
+  }
+}
+
+calcAICc <- c(rep(Inf,2^parameters))
+
+for(i in 1:2^8){
+  x <- i
+  w[x,]
+  ar1 <- w[x,1]
+  ar2 <- w[x,2]
+  ar3 <- 0
+  ar4 <- 0
+  ar5 <- 0
+  ar6 <- w[x,3]
+  ar7 <- w[x,4]
+  ar8 <- w[x,5]
+  ma1 <- 0
+  ma2 <- 0
+  ma3 <- 0
+  ma4 <- 0
+  ma5 <- w[x,6]
+  ma6 <- w[x,7]
+  ma7 <- w[x,8]
+  ma8 <- 0
+  
+  try(
+    {
+      calcAICc[i]<- AICc(arima(cpi_BC_D1, order=c(8,1,8),
+      fixed = c(ar1,ar2,ar3,ar4,ar5,ar6,ar7,ar8, ma1,ma2,ma3,ma4,ma5,ma6,ma7,ma8), method="ML"))
+    }
+    , silent = TRUE
+   )
+}
+
+print(calcAICc)
+#minAICc <- which(calcAICc < 943.7431)
+#print(minAICc)
+#print("ar1 ar3 ar4  ar5 ar8  ma1  ma3  ma4  ma8")
+#for(i in 1:length(minAICc)){
+#  print(w[minAICc[i],])
+#  print(calcAICc[minAICc[i]])
+#}
+```
+
+```{r, echo=FALSE, message=FALSE}
+# We want to fix CPI of BOX COX FOR ESIMATED PARAMETES
+fit <- arima(cpi_BoxCoX, order=c(8,1,8),
+      fixed = c(NA,NA,0,0,0,NA,NA,NA,  0,0,0,0,NA,NA,NA,0 ), method="ML")
+rsdls = residuals(fit)
+fit
+print("Below is the AICc value of the data:")
+AICc(fit)
+```
+
+```{r, echo=FALSE}
+plot(rsdls, main="Fitted Residuals")
+```
+
+```{r,echo=FALSE}
+op <- par(mfrow=c(2,2))
+acf(rsdls,main = "Autocorrelation")
+pacf(rsdls,main = "Partial Autocorrelation")
+hist(rsdls,main = "Histogram")
+qqnorm(rsdls,main = "QQPlot")
+qqline(rsdls,col="blue")
+par(op)
+```
+
+```{r}
+shapiro.test(rsdls)
+```
+
+```{r}
+Box.test(rsdls, type = "Ljung-Box", lag = 16, fitdf = 8)
+```
+
+```{r}
+Box.test(rsdls, type = "Box-Pierce", lag = 16, fitdf = 8)
+```
+
+```{r}
+Box.test(rsdls^2, type = "Box-Pierce", lag = 16, fitdf = 0)
+```
+
+```{r}
+forecast_series <-predict(fit, n.ahead = 24)
+values = (((forecast_series$pred)*lambda+1)^(1/lambda))
+errors = (((forecast_series$se)*lambda+1)^(1/lambda))
+#errors = forecast_series$se
+print(values)
+print(errors)
+cpi_2012 = ts(data[,2], start=c(1990,1), end=c(2012,12),frequency = 12)
+ts.plot(cpi_2012)
+lines(values,lty=1,col="red")
+lines(values+1.96*errors,lty=2)
+lines(values-1.96*errors,lty=2)
+```
+
+
